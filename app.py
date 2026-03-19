@@ -6,6 +6,7 @@ A comprehensive educational platform for learning about environmental science an
 import streamlit as st
 import sys
 import os
+from datetime import datetime
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -145,7 +146,132 @@ def render_student_dashboard():
     
     with tab1:
         st.subheader("📝 Take a Quiz")
-        st.write("Quiz feature coming soon! Select a quiz to get started.")
+
+        quizzes_result = QuizEngine.get_available_quizzes()
+        if not quizzes_result.get('success', False):
+            st.error(quizzes_result.get('message', 'Could not load quizzes'))
+        else:
+            quizzes = quizzes_result.get('quizzes', [])
+
+            if not quizzes:
+                st.info("No quizzes available yet.")
+            else:
+                quiz_lookup = {
+                    f"{quiz['title']} ({quiz['question_count']} questions, pass {quiz['passing_score']}%)": quiz
+                    for quiz in quizzes
+                }
+
+                selected_label = st.selectbox("Choose a quiz", options=list(quiz_lookup.keys()))
+                selected_quiz = quiz_lookup[selected_label]
+                selected_quiz_id = selected_quiz['id']
+
+                st.caption(selected_quiz.get('description', ''))
+
+                questions_result = QuizEngine.get_quiz_questions(selected_quiz_id)
+                if not questions_result.get('success', False):
+                    st.error(questions_result.get('message', 'Could not load quiz questions'))
+                else:
+                    questions = questions_result['questions']
+
+                    if not questions:
+                        st.warning("This quiz currently has no questions.")
+                    else:
+                        start_key = f"quiz_start_{selected_quiz_id}"
+                        result_key = f"quiz_result_{selected_quiz_id}"
+
+                        if start_key not in st.session_state:
+                            st.session_state[start_key] = datetime.utcnow()
+
+                        with st.form(key=f"quiz_form_{selected_quiz_id}"):
+                            answers = {}
+
+                            for index, question in enumerate(questions, 1):
+                                st.markdown(f"**Q{index}. {question['question_text']}**")
+
+                                input_key = f"quiz_answer_{selected_quiz_id}_{question['id']}"
+                                question_type = question.get('question_type', 'multiple_choice')
+                                options = question.get('options', [])
+
+                                if question_type in ('multiple_choice', 'true_false'):
+                                    select_options = ['Select an answer...'] + options
+                                    selected_answer = st.selectbox(
+                                        "Select one option",
+                                        options=select_options,
+                                        key=input_key,
+                                        label_visibility='collapsed',
+                                    )
+                                    answers[question['id']] = '' if selected_answer == 'Select an answer...' else selected_answer
+                                else:
+                                    answers[question['id']] = st.text_input(
+                                        "Your answer",
+                                        key=input_key,
+                                        placeholder="Type your answer here",
+                                    )
+
+                            submitted = st.form_submit_button("Submit Quiz", use_container_width=True)
+
+                        if submitted:
+                            unanswered = [
+                                idx + 1 for idx, question in enumerate(questions)
+                                if not (answers.get(question['id']) or '').strip()
+                            ]
+
+                            if unanswered:
+                                st.warning(
+                                    f"Please answer all questions before submitting. Missing: {', '.join(map(str, unanswered))}"
+                                )
+                            else:
+                                started_at = st.session_state.get(start_key, datetime.utcnow())
+                                time_spent = int((datetime.utcnow() - started_at).total_seconds())
+
+                                submit_result = QuizEngine.submit_quiz(
+                                    user_id=st.session_state.user['id'],
+                                    quiz_id=selected_quiz_id,
+                                    answers=answers,
+                                    time_spent_seconds=time_spent,
+                                )
+
+                                if submit_result.get('success', False):
+                                    st.session_state[result_key] = submit_result
+                                    st.session_state.pop(start_key, None)
+
+                                    for question in questions:
+                                        st.session_state.pop(
+                                            f"quiz_answer_{selected_quiz_id}_{question['id']}",
+                                            None,
+                                        )
+
+                                    st.rerun()
+                                else:
+                                    st.error(submit_result.get('message', 'Failed to submit quiz'))
+
+                        if result_key in st.session_state:
+                            latest_result = st.session_state[result_key]
+                            xp_earned = GamificationEngine.calculate_xp_earned(latest_result['score'])
+
+                            if latest_result.get('passed'):
+                                st.success(f"Great job! You passed with {latest_result['score']}%.")
+                            else:
+                                st.error(f"You scored {latest_result['score']}%. Keep practicing and try again!")
+
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Score", f"{latest_result['score']}%")
+                            with col2:
+                                st.metric(
+                                    "Correct Answers",
+                                    f"{latest_result['correct_answers']}/{latest_result['total_questions']}",
+                                )
+                            with col3:
+                                st.metric("XP Earned", xp_earned)
+
+                            with st.expander("Review your answers"):
+                                for idx, answer_info in enumerate(latest_result.get('question_breakdown', []), 1):
+                                    status = "✅" if answer_info['is_correct'] else "❌"
+                                    st.write(f"{status} Q{idx}: {answer_info['question_text']}")
+                                    st.caption(f"Your answer: {answer_info['user_answer'] or 'No answer'}")
+                                    if not answer_info['is_correct']:
+                                        st.caption(f"Correct answer: {answer_info['correct_answer']}")
     
     with tab2:
         st.subheader("📊 My Progress")
@@ -260,6 +386,9 @@ def main():
     # Initialize database on first run
     if not os.path.exists('ecolearn.db'):
         init_db()
+
+    # Ensure there are starter quizzes and questions available in the app.
+    QuizEngine.seed_sample_quizzes()
     
     # Initialize session state
     init_auth_session()

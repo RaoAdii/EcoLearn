@@ -6,6 +6,7 @@ Demonstrates test-driven development practices.
 import unittest
 import sys
 import os
+import uuid
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -92,6 +93,54 @@ class TestQuizEngine(unittest.TestCase):
         
         self.assertIn('success', result)
         self.assertIn('message', result)
+
+    def test_seed_sample_quizzes(self):
+        """Test that sample quizzes can be seeded and listed."""
+        seed_result = QuizEngine.seed_sample_quizzes()
+
+        self.assertTrue(seed_result.get('success', False))
+
+        available = QuizEngine.get_available_quizzes()
+        self.assertTrue(available.get('success', False))
+        self.assertGreater(len(available.get('quizzes', [])), 0)
+
+    def test_submit_quiz(self):
+        """Test full quiz submission flow with generated user."""
+        QuizEngine.seed_sample_quizzes()
+        available = QuizEngine.get_available_quizzes()
+
+        self.assertTrue(available.get('success', False))
+        self.assertGreater(len(available.get('quizzes', [])), 0)
+
+        quiz_id = available['quizzes'][0]['id']
+        questions_result = QuizEngine.get_quiz_questions(quiz_id)
+
+        self.assertTrue(questions_result.get('success', False))
+        self.assertGreater(len(questions_result.get('questions', [])), 0)
+
+        unique_id = uuid.uuid4().hex[:8]
+        registration = AuthManager.register_user(
+            username=f"quizuser_{unique_id}",
+            email=f"quizuser_{unique_id}@example.com",
+            password="password123"
+        )
+        self.assertTrue(registration.get('success', False))
+
+        answers = {}
+        for question in questions_result['questions']:
+            options = question.get('options', [])
+            answers[str(question['id'])] = options[0] if options else ""
+
+        submit_result = QuizEngine.submit_quiz(
+            user_id=registration['user_id'],
+            quiz_id=quiz_id,
+            answers=answers,
+            time_spent_seconds=30
+        )
+
+        self.assertTrue(submit_result.get('success', False))
+        self.assertIn('score', submit_result)
+        self.assertIn('total_questions', submit_result)
 
 
 if __name__ == '__main__':
