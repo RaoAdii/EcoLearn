@@ -884,8 +884,50 @@ def render_student_dashboard():
                 selected_quiz = None
                 for idx, quiz in enumerate(quizzes[:4]):
                     with quiz_cols[idx % len(quiz_cols)]:
+                        # Styled quiz card
+                        st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(135deg, #635BFF 0%, #9B6DFF 100%);
+                            color: white;
+                            padding: 20px;
+                            border-radius: 16px;
+                            text-align: center;
+                            cursor: pointer;
+                            transition: all 300ms ease;
+                            min-height: 140px;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: center;
+                            box-shadow: 0 4px 16px rgba(99, 91, 255, 0.3);
+                            margin-bottom: 12px;
+                        ">
+                            <div style="font-size: 32px; margin-bottom: 12px;">📚</div>
+                            <div style="
+                                font-size: 16px;
+                                font-weight: 700;
+                                margin-bottom: 12px;
+                                line-height: 1.3;
+                                word-wrap: break-word;
+                            ">{quiz['title']}</div>
+                            <div style="
+                                font-size: 13px;
+                                opacity: 0.9;
+                                margin-bottom: 8px;
+                            ">{quiz['question_count']} Questions</div>
+                            <div style="
+                                font-size: 12px;
+                                opacity: 0.8;
+                                background: rgba(255,255,255,0.2);
+                                padding: 6px 12px;
+                                border-radius: 8px;
+                                display: inline-block;
+                                margin: 0 auto;
+                            ">Pass: {int(quiz['passing_score'])}%</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
                         if st.button(
-                            f"📚 {quiz['title']}\n\n{quiz['question_count']} Questions • {int(quiz['passing_score'])}% to Pass",
+                            "Start Quiz →",
                             use_container_width=True,
                             key=f"quiz_btn_{quiz['id']}"
                         ):
